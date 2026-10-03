@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Orders · Shirt Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EEEFF1;--line:#E2E4E8;--ink:#15171C;--mute:#6D727C;--hover:#F3F4F6;--r:10px}
+*{box-sizing:border-box;margin:0}
+body{font:15px/1.4 "Instrument Sans",system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+header{height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:#fff;border-bottom:1px solid var(--line)}
+header b{font-weight:600;font-size:17px}
+.btn{height:36px;padding:0 16px;border-radius:var(--r);border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:500}
+.btn:hover{background:var(--hover)}.btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+main{max-width:980px;margin:24px auto;padding:0 16px;display:flex;flex-direction:column;gap:12px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;grid-template-columns:120px 1fr auto;gap:16px;align-items:center}
+.thumb{width:120px;height:140px;border-radius:10px;border:1px solid var(--line);overflow:hidden;background:conic-gradient(#ECEDEF 25%,#fff 0 50%,#ECEDEF 0 75%,#fff 0) 0 0/16px 16px}
+.thumb img{width:100%;height:100%;object-fit:contain;display:block}
+.meta{display:flex;flex-direction:column;gap:3px;min-width:0}
+.meta .top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.meta b{font-weight:600;font-size:17px}.meta .top span{color:var(--mute);font-size:14px}
+.line{display:grid;grid-template-columns:76px 1fr;gap:8px;font-size:14px}.line>span:first-child{color:var(--mute)}
+.v{overflow-wrap:anywhere}.contact{display:flex;flex-direction:column}.contact a{color:var(--ink);overflow-wrap:anywhere}
+.dl{margin-top:6px;font-size:14px;color:var(--ink);width:fit-content}
+.side{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+select{height:36px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r);background:#fff}
+.gate{max-width:320px;margin:20vh auto;display:flex;flex-direction:column;gap:12px;padding:0 16px}
+.gate input{height:40px;padding:0 12px;border:1px solid var(--line);border-radius:var(--r)}
+.err{color:#B3261E;font-size:14px}
+.empty{color:var(--mute);text-align:center;padding:48px 0}
+[hidden]{display:none!important}
+@media(max-width:620px){.card{grid-template-columns:96px 1fr}.side{grid-column:1/-1;flex-direction:row}.side>*{flex:1}.thumb{width:96px;height:112px}}
+</style>
+</head>
+<body>
+<form class="gate" id="gate"><b style="font-size:19px">Orders</b><input type="password" id="pw" placeholder="Admin password" autocomplete="current-password" required><button class="btn primary">Sign in</button><p class="err" id="err"></p></form>
+<div id="app" hidden>
+  <header><b>Orders</b><div><button class="btn" id="refresh">Refresh</button> <button class="btn" id="out">Sign out</button></div></header>
+  <main id="list"></main>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let key = sessionStorage.getItem('k') || '';
+const api = (p, o = {}) => fetch(p, { ...o, headers: { ...(o.headers || {}), 'x-admin-key': key, 'Content-Type': 'application/json' } });
+const el = (t, props = {}, ...kids) => { const e = Object.assign(document.createElement(t), props); e.append(...kids); return e; };
+
+async function load() {
+  const r = await api('/api/admin/orders');
+  if (r.status === 401) { const j = await r.json(); sessionStorage.removeItem('k'); $('app').hidden = true; $('gate').hidden = false; $('err').textContent = key ? j.error : ''; return; }
+  $('gate').hidden = true; $('app').hidden = false;
+  const rows = await r.json(), list = $('list'); list.replaceChildren();
+  if (!rows.length) return list.append(el('p', { className: 'empty', textContent: 'No orders yet.' }));
+  rows.forEach(o => {
+    const thumb = el('div', { className: 'thumb' }, el('img', { src: o.print_url || '', alt: 'Design' }));
+    const sel = el('select'); ['new','printing','shipped','done','cancelled'].forEach(s => sel.append(el('option', { value: s, textContent: s[0].toUpperCase() + s.slice(1), selected: s === o.status })));
+    sel.onchange = async () => { await api('/api/admin/orders/' + o.id, { method: 'PATCH', body: JSON.stringify({ status: sel.value }) }); };
+    const line = (k, v) => el('div', { className: 'line' }, el('span', { textContent: k }), v);
+    const contact = [el('span', { className: 'v', textContent: o.name }), el('a', { href: 'mailto:' + o.email, textContent: o.email })];
+    if (o.phone) contact.push(el('a', { href: 'tel:' + o.phone.replace(/[^\d+]/g, ''), textContent: o.phone }));
+    const meta = el('div', { className: 'meta' },
+      el('div', { className: 'top' }, el('b', { textContent: o.product_label }), el('span', { textContent: '#' + o.id + ' · ' + new Date(o.created_at).toLocaleString() })),
+      line('Size', el('span', { className: 'v', textContent: o.size })),
+      ...(o.color_name ? [line('Colour', el('span', { className: 'v', textContent: o.color_name }))] : []),
+      line('Quantity', el('span', { className: 'v', textContent: String(o.qty) })),
+      line('Customer', el('span', { className: 'contact' }, ...contact)),
+      ...(o.notes ? [line('Notes', el('span', { className: 'v', textContent: o.notes }))] : []),
+      ...(o.print_url ? [el('a', { className: 'dl', href: o.print_url, download: `order-${o.id}.png`, textContent: 'Download design (PNG)' })] : []));
+    list.append(el('article', { className: 'card' }, thumb, meta, el('div', { className: 'side' }, sel)));
+  });
+}
+$('gate').onsubmit = e => { e.preventDefault(); key = $('pw').value; sessionStorage.setItem('k', key); load(); };
+$('refresh').onclick = load;
+$('out').onclick = () => { sessionStorage.removeItem('k'); key = ''; load(); };
+if (key) load();
+</script>
+</body>
+</html>
